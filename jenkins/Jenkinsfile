@@ -12,7 +12,7 @@ pipeline {
 
   stages {
     stage('Checkout') {
-      when { branch environment.BRANCH_TO_BUILD }
+      when { branch env.BRANCH_TO_BUILD }
       steps {
         checkout scm
         sh 'git rev-parse --short HEAD > .git/shortsha'
@@ -20,7 +20,7 @@ pipeline {
     }
 
     stage('Build Docker image') {
-      when { branch environment.BRANCH_TO_BUILD }
+      when { branch env.BRANCH_TO_BUILD }
       steps {
         script {
           def sha = readFile('.git/shortsha').trim()
@@ -34,7 +34,7 @@ pipeline {
     }
 
     stage('Push to GHCR') {
-      when { branch environment.BRANCH_TO_BUILD }
+      when { branch env.BRANCH_TO_BUILD }
       steps {
         withCredentials([usernamePassword(
           credentialsId: 'ghrc-creds',
@@ -52,7 +52,7 @@ pipeline {
     }
 
     stage('Deploy to Kubernetes (apply manifests and update image)') {
-      when { branch environment.BRANCH_TO_BUILD }
+      when { branch env.BRANCH_TO_BUILD }
       steps {
         sh """
           kubectl -n ${K8S_NAMESPACE} apply -f ${K8S_MANIFEST_DIR}
