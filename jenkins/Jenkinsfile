@@ -1,0 +1,68 @@
+pipeline {
+  agent any
+
+  environment {
+    GHCR_REPO = "ghcr.io/eliozo/date-app"
+    K8S_NAMESPACE    = "default"
+    K8S_MANIFEST_DIR = "k8s"
+    DEPLOYMENT_NAME  = "date-app"
+    CONTAINER_NAME   = "date-app"
+    BRANCH_TO_BUILD  = "main"
+  }
+
+  stages {
+    stage('Checkout') {
+      when { branch environment.BRANCH_TO_BUILD }
+      steps {
+        checkout scm
+        sh 'git rev-parse --short HEAD > .git/shortsha'
+      }
+    }
+
+    stage('Build Docker image') {
+      when { branch environment.BRANCH_TO_BUILD }
+      steps {
+        script {
+          def sha = readFile('.git/shortsha').trim()
+          env.IMAGE_TAG = sha
+        }
+        sh """
+          docker build -t ${GHCR_REPO}:${IMAGE_TAG} .
+          docker tag ${GHCR_REPO}:${IMAGE_TAG} ${GHCR_REPO}:latest
+        """
+      }
+    }
+
+    stage('Push to GHCR') {
+      when { branch environment.BRANCH_TO_BUILD }
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'ghrc-creds',
+          usernameVariable: 'GH_USER',
+          passwordVariable: 'GH_TOKEN'
+        )]) {
+          sh """
+            echo "${GH_TOKEN}" | docker login ghcr.io -u "${GH_USER}" --password-stdin
+            docker push ${GHCR_REPO}:${IMAGE_TAG}
+            docker push ${GHCR_REPO}:latest
+            docker logout ghcr.io
+          """
+        }
+      }
+    }
+
+    stage('Deploy to Kubernetes (apply manifests and update image)') {
+      when { branch environment.BRANCH_TO_BUILD }
+      steps {
+        sh """
+          kubectl -n ${K8S_NAMESPACE} apply -f ${K8S_MANIFEST_DIR}
+
+          kubectl -n ${K8S_NAMESPACE} set image deployment/${DEPLOYMENT_NAME} \
+            ${CONTAINER_NAME}=${GHCR_REPO}:${IMAGE_TAG}
+
+          kubectl -n ${K8S_NAMESPACE} rollout status deployment/${DEPLOYMENT_NAME}
+        """
+      }
+    }
+  }
+}
