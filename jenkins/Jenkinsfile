@@ -50,10 +50,16 @@ pipeline {
     stage('Enforce main branch only') {
       steps {
         script {
-          def branch = sh(returnStdout: true, script: "git rev-parse --abbrev-ref HEAD").trim()
-          if (branch != env.ALLOWED_BRANCH) {
+          def branches = sh(
+            returnStdout: true,
+            script: "git branch -r --contains HEAD | tr -d ' '"
+          ).trim()
+
+          echo "Remote branches containing this commit:\n${branches}"
+
+          if (!branches.readLines().contains("origin/${env.ALLOWED_BRANCH}")) {
             currentBuild.result = 'NOT_BUILT'
-            error("This pipeline only deploys from '${env.ALLOWED_BRANCH}'. Current branch: ${branch}")
+            error("This pipeline only deploys from '${env.ALLOWED_BRANCH}'.")
           }
         }
       }
