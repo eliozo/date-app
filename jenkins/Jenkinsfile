@@ -10,6 +10,7 @@ pipeline {
     BRANCH_TO_BUILD  = "main"
     GIT_SSH_URL      = "git@github.com:eliozo/date-app.git"
     GIT_SSH_CRED_ID  = "github-ssh"
+    ALLOWED_BRANCH   = "main"
   }
 
   stages {
