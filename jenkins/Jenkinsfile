@@ -2,43 +2,34 @@ pipeline {
   agent any
 
   environment {
-    GHCR_REPO = "ghcr.io/eliozo/date-app"
+    GHCR_REPO        = "ghcr.io/eliozo/date-app"
     K8S_NAMESPACE    = "default"
     K8S_MANIFEST_DIR = "k8s"
     DEPLOYMENT_NAME  = "date-app"
     CONTAINER_NAME   = "date-app"
-    BRANCH_TO_BUILD  = "main"
+
     GIT_SSH_URL      = "git@github.com:eliozo/date-app.git"
     GIT_SSH_CRED_ID  = "github-ssh"
     ALLOWED_BRANCH   = "main"
   }
 
   stages {
-    stage('Prepare git (force HTTP/1.1)') {
-      steps {
-        sh '''
-          git config --global http.version HTTP/1.1 || true
-          git config --global --get http.version || true
-        '''
-      }
-    }
-
-    stage('Checkout (SSH)') {
+    stage('Checkout (SSH, main only)') {
       steps {
         sshagent(credentials: [env.GIT_SSH_CRED_ID]) {
           sh '''
             mkdir -p ~/.ssh
             chmod 700 ~/.ssh
-            ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
             chmod 600 ~/.ssh/known_hosts
           '''
 
           checkout([
             $class: 'GitSCM',
-            branches: [[name: "*/${ALLOWED_BRANCH}"]],
+            branches: [[name: "*/${env.ALLOWED_BRANCH}"]],
             userRemoteConfigs: [[
-              url: "${GIT_SSH_URL}",
-              credentialsId: "${GIT_SSH_CRED_ID}"
+              url: env.GIT_SSH_URL,
+              credentialsId: env.GIT_SSH_CRED_ID
             ]]
           ])
         }
@@ -49,9 +40,7 @@ pipeline {
 
     stage('Build Docker image') {
       steps {
-        script {
-          env.IMAGE_TAG = readFile('.git/shortsha').trim()
-        }
+        script { env.IMAGE_TAG = readFile('.git/shortsha').trim() }
         sh """
           docker build -t ${GHCR_REPO}:${IMAGE_TAG} .
           docker tag ${GHCR_REPO}:${IMAGE_TAG} ${GHCR_REPO}:latest
@@ -80,10 +69,8 @@ pipeline {
       steps {
         sh """
           kubectl -n ${K8S_NAMESPACE} apply -f ${K8S_MANIFEST_DIR}
-
           kubectl -n ${K8S_NAMESPACE} set image deployment/${DEPLOYMENT_NAME} \
             ${CONTAINER_NAME}=${GHCR_REPO}:${IMAGE_TAG}
-
           kubectl -n ${K8S_NAMESPACE} rollout status deployment/${DEPLOYMENT_NAME}
         """
       }
