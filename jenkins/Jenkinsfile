@@ -61,7 +61,7 @@ pipeline {
             docker push ${GHCR_REPO}:${IMAGE_TAG}
             docker push ${GHCR_REPO}:latest
             docker logout ghcr.io
-          ''š
+          '''
         }
       }
     }
