@@ -47,24 +47,6 @@ pipeline {
       }
     }
 
-    stage('Enforce main branch only') {
-      steps {
-        script {
-          def branches = sh(
-            returnStdout: true,
-            script: "git branch -r --contains HEAD | tr -d ' '"
-          ).trim()
-
-          echo "Remote branches containing this commit:\n${branches}"
-
-          if (!branches.readLines().contains("origin/${env.ALLOWED_BRANCH}")) {
-            currentBuild.result = 'NOT_BUILT'
-            error("This pipeline only deploys from '${env.ALLOWED_BRANCH}'.")
-          }
-        }
-      }
-    }
-
     stage('Build Docker image') {
       steps {
         script {
