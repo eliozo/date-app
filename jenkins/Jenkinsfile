@@ -8,12 +8,40 @@ pipeline {
     DEPLOYMENT_NAME  = "date-app"
     CONTAINER_NAME   = "date-app"
     BRANCH_TO_BUILD  = "main"
+    GIT_SSH_URL      = "git@github.com:eliozo/date-app.git"
+    GIT_SSH_CRED_ID  = "github-ssh"
   }
 
   stages {
-    stage('Checkout') {
+    stage('Prepare git (force HTTP/1.1)') {
       steps {
-        checkout scm
+        sh '''
+          git config --global http.version HTTP/1.1 || true
+          git config --global --get http.version || true
+        '''
+      }
+    }
+
+    stage('Checkout (SSH)') {
+      steps {
+        sshagent(credentials: [env.GIT_SSH_CRED_ID]) {
+          sh '''
+            mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+            ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+            chmod 600 ~/.ssh/known_hosts
+          '''
+
+          checkout([
+            $class: 'GitSCM',
+            branches: [[name: "*/${ALLOWED_BRANCH}"]],
+            userRemoteConfigs: [[
+              url: "${GIT_SSH_URL}",
+              credentialsId: "${GIT_SSH_CRED_ID}"
+            ]]
+          ])
+        }
+
         sh 'git rev-parse --short HEAD > .git/shortsha'
       }
     }
@@ -21,16 +49,10 @@ pipeline {
     stage('Enforce main branch only') {
       steps {
         script {
-          def containing = sh(
-            returnStdout: true,
-            script: "git branch -r --contains HEAD | tr -d ' '"
-          ).trim()
-
-          echo "Remote branches containing this commit:\n${containing}"
-
-          if (!containing.readLines().contains("origin/${env.ALLOWED_BRANCH}")) {
+          def branch = sh(returnStdout: true, script: "git rev-parse --abbrev-ref HEAD").trim()
+          if (branch != env.ALLOWED_BRANCH) {
             currentBuild.result = 'NOT_BUILT'
-            error("This pipeline only deploys from '${env.ALLOWED_BRANCH}'. Not deploying.")
+            error("This pipeline only deploys from '${env.ALLOWED_BRANCH}'. Current branch: ${branch}")
           }
         }
       }
