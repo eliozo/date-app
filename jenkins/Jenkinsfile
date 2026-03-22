@@ -5,6 +5,7 @@ pipeline {
     GHCR_REPO        = "ghcr.io/eliozo/date-app"
     K8S_NAMESPACE    = "default"
     K8S_MANIFEST_DIR = "k8s"
+    KUBECONFIG       = "/var/jenkins_home/.kube/config"
     DEPLOYMENT_NAME  = "date-app"
     CONTAINER_NAME   = "date-app"
 
