@@ -14,10 +14,12 @@ spec:
       labels:
         app: date-app
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: date-app
-          image: date-app:rootless
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/eliozo/date-app:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 5000
               name: http
