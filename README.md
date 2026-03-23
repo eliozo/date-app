@@ -8,7 +8,8 @@ This repository contains a simple Python Flask web application that displays the
 - `kubectl`
 - A Kubernetes cluster: **Minikube**
 - Docker image for the app
-- Colima (lightweight alternative for Docker Desktop)
+- **Colima** (lightweight alternative for Docker Desktop)
+- Before starting to work, you have to make sure that minikube and colima is started
 
 ### Manifests
 Kubernetes resources included:
