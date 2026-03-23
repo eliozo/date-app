@@ -1,0 +1,149 @@
+- name: Install Docker, kubectl, and Minikube (Docker driver)
+  hosts: all
+  become: true
+
+  vars:
+    minikube_user: "{{ ansible_user | default('ubuntu') }}"
+
+    minikube_version: "v1.38.1"
+    kubectl_version: "v1.35.3"
+
+    minikube_driver: "docker"
+
+  tasks:
+    # Architecture mapping 
+    - name: Determine system architecture for downloads (amd64/arm64)
+      ansible.builtin.set_fact:
+        arch: "{{ 'arm64' if ansible_facts['architecture'] in ['aarch64', 'arm64'] else 'amd64' }}"
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install required system packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - apt-transport-https
+          # For Minikube networking
+          - conntrack
+          - socat
+          - iptables
+          - ebtables
+        state: present
+
+    # Docker Engine installation
+    - name: Ensure /etc/apt/keyrings exists (for repo keys)
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download Docker GPG key (ascii)
+      ansible.builtin.get_url:
+        url: "https://download.docker.com/linux/ubuntu/gpg"
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Dearmor Docker GPG key into keyring
+      ansible.builtin.command: >
+        gpg --dearmor -o /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc
+      args:
+        creates: /etc/apt/keyrings/docker.gpg
+
+    - name: Ensure Docker keyring permissions
+      ansible.builtin.file:
+        path: /etc/apt/keyrings/docker.gpg
+        mode: "0644"
+
+    - name: Add Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: >
+          deb [arch={{ arch }} signed-by=/etc/apt/keyrings/docker.gpg]
+          https://download.docker.com/linux/ubuntu
+          {{ ansible_distribution_release }} stable
+        filename: docker
+        state: present
+
+    - name: Update apt cache after adding Docker repo
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install Docker Engine
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+
+    - name: Enable and start Docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add user to docker group (so minikube can use docker driver without sudo)
+      ansible.builtin.user:
+        name: "{{ minikube_user }}"
+        groups: docker
+        append: true
+
+    # Kernel/network settings for Kubernetes
+    - name: Ensure br_netfilter is loaded
+      ansible.builtin.modprobe:
+        name: br_netfilter
+        state: present
+
+    - name: Kubernetes sysctl settings
+      ansible.builtin.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
+        - { name: "net.ipv4.ip_forward", value: "1" }
+
+    - name: Install kubectl
+      ansible.builtin.get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/{{ arch }}/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: "0755"
+        force: true
+      # force=true prevents "wrong arch already installed"
+
+    - name: Install minikube
+      ansible.builtin.get_url:
+        url: "https://storage.googleapis.com/minikube/releases/{{ minikube_version }}/minikube-linux-{{ arch }}"
+        dest: /usr/local/bin/minikube
+        mode: "0755"
+        force: true
+
+    - name: Check Minikube status (as minikube_user)
+      ansible.builtin.command: minikube status -o json
+      become_user: "{{ minikube_user }}"
+      register: minikube_status
+      changed_when: false
+      failed_when: false
+      # If Minikube isn't started, this may be non-zero; treat as "not running".
+
+    - name: Start Minikube (only if not already running)
+      ansible.builtin.command: "minikube start --driver={{ minikube_driver }}"
+      become_user: "{{ minikube_user }}"
+      when: >
+        (minikube_status.rc != 0) or
+        (
+          (minikube_status.stdout | default('{}') | from_json).Host is not defined or
+          (minikube_status.stdout | from_json).Host != "Running"
+        )
+
+    - name: Show Minikube cluster info
+      ansible.builtin.command: kubectl cluster-info
+      become_user: "{{ minikube_user }}"
+      changed_when: false
